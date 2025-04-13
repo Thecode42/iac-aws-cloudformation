@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  An example of an HTTP API with a Lambda
+  - Versión: 1.0.0
+  - Autor: Roger
+
+Resources:
+  LambdaDemo:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+            return { message: "Hola desde Lambda!" };
+          };
+      Handler: index.handler
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: nodejs20.x
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${LambdaDemo}
+      RetentionInDays: 7
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  DemoHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: DemoHttpApi
+      ProtocolType: HTTP
+  DemoHttpApiLambdaDemoIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DemoHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt LambdaDemo.Arn
+      PayloadFormatVersion: "2.0"
+  DemoHttpApiHelloRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DemoHttpApi
+      RouteKey: GET /hello
+      Target: !Sub integrations/${DemoHttpApiLambdaDemoIntegration}
+  DemoHttpApiDefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref DemoHttpApi
+      StageName: $default
+      AutoDeploy: true
+  LambdaDemoExampleApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaDemo
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${DemoHttpApi}/*/GET/hello
+Outputs:
+  EndpointURL:
+    Description: URL of the HTTP API endpoint
+    Value: !Sub https://${DemoHttpApi}.execute-api.${AWS::Region}.amazonaws.com/hello
