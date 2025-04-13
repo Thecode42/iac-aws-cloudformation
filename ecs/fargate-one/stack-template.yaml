@@ -1,32 +1,3 @@
-AWSTemplateFormatVersion: "2010-09-09"
-Description: An API with a google image.
-
-Parameters:
-  Image:
-    Type: String
-
-Resources:
-  Vpc:
-      Type: AWS::EC2::VPC
-      Properties:
-        CidrBlock: 10.0.0.0/16
-        Tags:
-          - Key: stack
-            Value: dev-vpc
-  SecurityGroup:
-      Type: AWS::EC2::SecurityGroup
-      Properties:
-        VpcId: !Ref Vpc
-        GroupDescription: Production Lambda Security Group
-        GroupName: fargate-sg
-        SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-        SecurityGroupEgress:
-          - IpProtocol: '-1'
-            CidrIp: 0.0.0.0/0
-        Tags:
-          - Key: Name
-            Value: dev-sg
+template-file-path: ecs/template.yaml
+parameters: {}
+tags: {}
