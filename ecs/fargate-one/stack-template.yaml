@@ -1,9 +1,19 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: An API with a google image.
+Description: >-
+  An API with a google image
+  - Versión: 1.0.0
+  - Autor: Roger
 
 Parameters:
-  Image:
+  EnvType:
+    Description: Tipo de ambiente (dev/qa/prod)
     Type: String
+    AllowedValues: [dev, qa, prod]
+    Default: prod
+  image:
+    Type: String
+    Default: gcr.io/google-samples/hello-app:1.0
+    Description: The image to use for the container.
 
 Resources:
   Vpc:
@@ -12,13 +22,67 @@ Resources:
         CidrBlock: 10.0.0.0/16
         Tags:
           - Key: stack
-            Value: dev-vpc
-  SecurityGroup:
+            Value: ${EnvType}-vpc
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: stack
+          Value: Subnet-A
+  SubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetA
+      RouteTableId: !Ref PublicRouteTable
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: stack
+          Value: Subnet-B
+  SubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetB
+      RouteTableId: !Ref PublicRouteTable
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: ${EnvType}-igw
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: public-rt
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  SecurityGroupALB:
       Type: AWS::EC2::SecurityGroup
       Properties:
         VpcId: !Ref Vpc
-        GroupDescription: Production Lambda Security Group
-        GroupName: fargate-sg
+        GroupDescription: Security group for ALB
         SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -29,4 +93,145 @@ Resources:
             CidrIp: 0.0.0.0/0
         Tags:
           - Key: Name
-            Value: dev-sg
+            Value: alb-sg
+  SecurityGroupAPP:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        VpcId: !Ref Vpc
+        GroupDescription: Security group for APP
+        SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        SecurityGroupEgress:
+          - IpProtocol: '-1'
+            CidrIp: 0.0.0.0/0
+        Tags:
+          - Key: Name
+            Value: app-sg
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckPath: /
+      Name: ip-tg
+      Port: 8080
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref Vpc
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: internet-facing-alb
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Type: application
+      Subnets:
+        - !Ref SubnetA
+        - !Ref SubnetB
+      SecurityGroups:
+        - !GetAtt SecurityGroupALB.GroupId
+      Tags:
+        - Key: Purpose
+          Value: 'Internet-facing-ALB'
+  ALBHTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: "ecs-cluster"
+      CapacityProviders:
+        - FARGATE
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+          Base: 1
+      Tags:
+        - Key: Environment
+          Value: !Sub ${EnvType}-cluster
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: [ALBHTTPListener]
+    Properties:
+      ServiceName: "fargate-service"
+      Cluster: !Ref ECSCluster
+      LaunchType: FARGATE
+      DesiredCount: 3
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref SecurityGroupAPP
+          Subnets:
+            - !Ref SubnetA
+            - !Ref SubnetB
+      TaskDefinition: !Ref EcsTaskDefinition
+      LoadBalancers:
+        - ContainerName: "app"
+          ContainerPort: 8080
+          TargetGroupArn: !Ref TargetGroup
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ["ecs-tasks.amazonaws.com"]
+            Action: ["sts:AssumeRole"]
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Tags:
+        - Key: Service
+          Value: "ECS"
+  EcsTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: "task-fargate"
+      NetworkMode: "awsvpc"
+      RequiresCompatibilities: ["FARGATE"]
+      Cpu: "256"
+      Memory: "512"
+      ExecutionRoleArn: !GetAtt EcsTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: "app"
+          Image: !Ref image
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              HostPort: 8080
+              Protocol: "tcp"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Ref EcsLogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: "ecs"
+  EcsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: "/ecs/fargate-ecs-service"
+      RetentionInDays: 30
+Outputs:
+  EcsClusterName:
+    Description: "Nombre del Cluster ECS"
+    Value: !Ref ECSCluster
+  EcsServiceName:
+    Description: "Nombre del Servicio ECS"
+    Value: !GetAtt EcsService.Name
+  ServiceUrl:
+    Description: "URL del servicio"
+    Value: !Sub "http://${ApplicationLoadBalancer.DNSName}"

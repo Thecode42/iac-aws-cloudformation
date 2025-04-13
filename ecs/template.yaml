@@ -1,8 +1,0 @@
-template-file-path: ./fargate-one/stack-template.yaml
-parameters: 
-    image: gcr.io/google-samples/hello-app:1.0
-tags:
-    - Key: environment
-      Value: dev
-    - Key: Create_by
-      Value: Roger
