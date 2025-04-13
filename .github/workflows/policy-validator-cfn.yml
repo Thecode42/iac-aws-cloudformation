@@ -4,6 +4,7 @@ on:
     branches: ["master" ]
     paths:
       - 'function/lambda-one/stack-template.yaml'
+  workflow_dispatch:
 jobs:
   deploy:
     runs-on: ubuntu-latest
