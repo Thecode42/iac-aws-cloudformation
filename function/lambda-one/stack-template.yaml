@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   An example of an HTTP API with a Lambda
-  - Versión: 1.0.0
+  - Version: 1.0.0
   - Autor: Roger
 
 Resources:
