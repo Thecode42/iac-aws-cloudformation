@@ -1,4 +1,4 @@
-name: Deploy CloudFormation Fargate
+name: Deploy CloudFormation Fargate Stack
 on:
   push:
     branches: ["master" ]
