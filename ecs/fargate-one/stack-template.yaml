@@ -114,7 +114,13 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       HealthCheckEnabled: true
-      HealthCheckPath: /
+      HealthCheckPath: /api/swagger-ui.html
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: "8080"
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3 
       Name: ip-tg
       Port: 8080
       Protocol: HTTP
