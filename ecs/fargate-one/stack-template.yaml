@@ -164,7 +164,7 @@ Resources:
       ServiceName: "fargate-service"
       Cluster: !Ref ECSCluster
       LaunchType: FARGATE
-      DesiredCount: 3
+      DesiredCount: 1
       DeploymentConfiguration:
         MaximumPercent: 200
         MinimumHealthyPercent: 100
